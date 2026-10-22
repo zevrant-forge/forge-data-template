@@ -1,0 +1,5 @@
+# Files Forge uses only while a command is running.
+*.tmp
+ledger/ledger.lock
+outbox/sending/
+proposals/*.answering

@@ -1,0 +1,43 @@
+# Forge's morning email (forge/runners/notices.py). When a cloud run leaves a
+# notice in notices/, this job opens a GitHub issue ("Forge: 2 trades are
+# waiting for your OK. Reply by ..."), which GitHub emails to the owner of
+# this repository: the client. When the morning is answered, it closes that
+# issue with the one-line result. This repository is private to the client;
+# Zevrant is never added, so Zevrant never sees these emails.
+name: Forge notices
+on:
+  push:
+    branches: [main]
+    paths: ["notices/**"]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: forge-notices
+  cancel-in-progress: false
+jobs:
+  notices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open or close each morning's issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create forge-notice --color 1f6feb --force >/dev/null
+          for file in notices/*.json; do
+            [ -e "$file" ] || continue
+            action=$(jq -r .action "$file")
+            name=$(jq -r .name "$file")
+            found=$(gh issue list --label forge-notice --state all --search "[$name] in:title" \
+                    --json number,state --jq '.[0] // empty')
+            if [ "$action" = "open" ] && [ -z "$found" ]; then
+              gh issue create --label forge-notice \
+                --title "$(jq -r .title "$file") [$name]" --body "$(jq -r .body "$file")"
+            fi
+            if [ "$action" = "close" ] && [ -n "$found" ] \
+               && [ "$(echo "$found" | jq -r .state)" = "OPEN" ]; then
+              gh issue close "$(echo "$found" | jq -r .number)" --comment "$(jq -r .comment "$file")"
+            fi
+          done
